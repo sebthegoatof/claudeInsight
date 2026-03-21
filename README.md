@@ -2,6 +2,8 @@
 
 Claude AI 对话历史管理和分析工具，帮助开发者管理和回顾与 Claude 的对话历史。
 
+> ⚠️ **注意**：统计数据和会话数据不一定全面，以真实数据为准。
+
 ## 功能特性
 
 - **历史记录扫描与管理** - 自动扫描和管理 Claude 对话历史
@@ -80,3 +82,11 @@ pnpm dev:frontend
 | `pnpm typecheck` | 类型检查 |
 | `pnpm clean` | 清理构建产物 |
 
+
+
+## 页面
+![Preview](./frontend/public/1.png)
+![Preview](./frontend/public/2.png)
+![Preview](./frontend/public/3.png)
+![Preview](./frontend/public/4.png)
+![Preview](./frontend/public/5.png)
