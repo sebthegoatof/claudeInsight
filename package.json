@@ -4,7 +4,7 @@
   "private": true,
   "description": "Claude Insight - Monorepo full-stack application",
   "scripts": {
-    "kill:ports": "lsof -ti:5173,3000 | xargs -r kill -9 2>/dev/null || true",
+    "kill:ports": "npx kill-port 5173 3000",
     "dev": "pnpm run kill:ports && pnpm run --parallel dev",
     "dev:backend": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",
