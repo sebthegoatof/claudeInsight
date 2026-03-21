@@ -4,8 +4,7 @@
   "private": true,
   "description": "Claude Insight - Monorepo full-stack application",
   "scripts": {
-    "kill:ports": "npx kill-port 5173 3000",
-    "dev": "pnpm run kill:ports && pnpm run --parallel dev",
+    "dev": "pnpm run --parallel dev",
     "dev:backend": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",
     "build": "pnpm --filter backend build && pnpm --filter frontend build",
