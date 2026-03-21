@@ -1,0 +1,31 @@
+{
+  "name": "claude-insight",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Claude Insight - Monorepo full-stack application",
+  "scripts": {
+    "kill:ports": "lsof -ti:5173,3000 | xargs -r kill -9 2>/dev/null || true",
+    "dev": "pnpm run kill:ports && pnpm run --parallel dev",
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "build": "pnpm --filter backend build && pnpm --filter frontend build",
+    "build:backend": "pnpm --filter backend build",
+    "build:frontend": "pnpm --filter frontend build",
+    "lint": "pnpm -r lint",
+    "clean": "pnpm -r clean",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "keywords": [
+    "claude",
+    "insight",
+    "vue",
+    "fastify",
+    "monorepo"
+  ],
+  "author": "",
+  "license": "MIT"
+}
