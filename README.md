@@ -1,6 +1,6 @@
 # Claude Insight
 
-Claude AI 对话历史管理和分析工具，帮助开发者管理和回顾与 Claude 的对话历史。
+完全本地化Claude AI 对话历史管理和分析工具，帮助开发者管理和回顾与 Claude 的对话历史。
 
 > ⚠️ **注意**：统计数据和会话数据不一定全面，以真实数据为准。
 
@@ -82,7 +82,8 @@ pnpm dev:frontend
 | `pnpm typecheck` | 类型检查 |
 | `pnpm clean` | 清理构建产物 |
 
-
+## links
+[linux.do](https://linux.do/t/topic/1794151/9)
 
 ## 页面
 ![Preview](./frontend/public/1.png)
