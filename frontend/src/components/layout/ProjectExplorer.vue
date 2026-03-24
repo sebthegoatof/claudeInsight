@@ -66,7 +66,7 @@ function toggleSection(section: keyof typeof expandedSections.value) {
 }
 
 function selectSession(sessionId: string) {
-  const projectPath = currentProject.value?.encodedPath;
+  const projectPath = currentProject.value?.path;  // 使用原始路径而不是 encodedPath
   if (projectPath) {
     conversationStore.selectSession(sessionId, projectPath);
   }

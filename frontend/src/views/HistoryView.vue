@@ -1,26 +1,34 @@
 <script setup lang="ts">
 import { onMounted, computed, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useAppStore } from '@/stores/appStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useConversationStore } from '@/stores/conversationStore';
 import { useLayoutStore } from '@/stores/layoutStore';
 import { useSkillStore } from '@/stores/skillStore';
+import { useLinkageStore } from '@/stores/linkageStore';
 import ConversationList from '@/components/conversation/ConversationList.vue';
 import ConversationDetail from '@/components/conversation/ConversationDetail.vue';
 import ProjectOverview from '@/components/project/ProjectOverview.vue';
+import ContextBar from '@/components/conversation/ContextBar.vue';
+import SlideOver from '@/components/ui/SlideOver.vue';
+import SkillPanel from '@/components/linkage/SkillPanel.vue';
+import AgentPanel from '@/components/linkage/AgentPanel.vue';
+import TasksPanel from '@/components/linkage/TasksPanel.vue';
 import { History, FolderOpen } from 'lucide-vue-next';
 
+const route = useRoute();
 const appStore = useAppStore();
 const projectStore = useProjectStore();
 const conversationStore = useConversationStore();
 const layoutStore = useLayoutStore();
 const skillStore = useSkillStore();
+const linkageStore = useLinkageStore();
 
 // Current view mode
 const viewMode = computed(() => layoutStore.viewMode);
 const currentProject = computed(() => {
   if (!layoutStore.currentProjectId) return null;
-  // 使用 encodedPath 查找项目
   return projectStore.projects.find((p) => p.encodedPath === layoutStore.currentProjectId) || null;
 });
 
@@ -30,6 +38,19 @@ onMounted(async () => {
     projectStore.fetchProjects(),
     conversationStore.fetchTimeline(),
   ]);
+
+  // 从 query 参数自动选中会话（Dashboard 跳转过来）
+  const qSessionId = route.query.sessionId as string;
+  const qProject = route.query.project as string;
+  if (qSessionId && qProject) {
+    // 找到项目路径对应的 encodedPath
+    const project = projectStore.projects.find(p => p.path === qProject);
+    if (project) {
+      layoutStore.setCurrentProject(project.encodedPath);
+      await conversationStore.fetchProjectSessions(project.encodedPath);
+    }
+    conversationStore.selectSession(qSessionId, qProject);
+  }
 });
 // Watch for project selection changes
 watch(
@@ -144,19 +165,59 @@ function formatDate(dateStr: string | null) {
       </div>
 
       <!-- Detail View -->
-      <div class="flex-1 min-w-0 bg-background">
+      <div class="flex-1 min-w-0 bg-background flex flex-col">
+        <!-- Context Bar -->
+        <ContextBar
+          v-if="conversationStore.selectedSessionId"
+          @open-tasks="linkageStore.openPanel('tasks')"
+        />
         <!-- Project Overview or Conversation Detail -->
-        <template v-if="viewMode === 'project' && currentProject">
-          <ProjectOverview
-            v-if="!conversationStore.selectedSessionId"
-            :project="currentProject"
-          />
-          <ConversationDetail v-else />
-        </template>
-        <template v-else>
-          <ConversationDetail />
-        </template>
+        <div class="flex-1 overflow-hidden">
+          <template v-if="viewMode === 'project' && currentProject">
+            <ProjectOverview
+              v-if="!conversationStore.selectedSessionId"
+              :project="currentProject"
+            />
+            <ConversationDetail v-else />
+          </template>
+          <template v-else>
+            <ConversationDetail />
+          </template>
+        </div>
       </div>
     </div>
+
+    <!-- Linkage Side Panels -->
+    <SlideOver
+      :open="linkageStore.activePanel === 'skill'"
+      :title="`Skill: ${linkageStore.activeItem || ''}`"
+      @close="linkageStore.closePanel()"
+    >
+      <SkillPanel
+        v-if="linkageStore.activeItem"
+        :skill-name="linkageStore.activeItem"
+        @close="linkageStore.closePanel()"
+      />
+    </SlideOver>
+
+    <SlideOver
+      :open="linkageStore.activePanel === 'agent'"
+      :title="`Agent: ${linkageStore.activeItem || ''}`"
+      @close="linkageStore.closePanel()"
+    >
+      <AgentPanel
+        v-if="linkageStore.activeItem"
+        :agent-type="linkageStore.activeItem"
+        @close="linkageStore.closePanel()"
+      />
+    </SlideOver>
+
+    <SlideOver
+      :open="linkageStore.activePanel === 'tasks'"
+      title="任务 & TODO"
+      @close="linkageStore.closePanel()"
+    >
+      <TasksPanel @close="linkageStore.closePanel()" />
+    </SlideOver>
   </div>
 </template>

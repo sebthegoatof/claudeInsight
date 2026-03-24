@@ -6,7 +6,7 @@ import { useProjectStore } from './stores/projectStore';
 import { useModelProfileStore } from './stores/modelProfileStore';
 import GlobalSearch from './components/search/GlobalSearch.vue';
 const globalSearchRef = ref<InstanceType<typeof GlobalSearch> | null>(null);
-import { History, Zap, Settings, Search, Cpu, ChevronDown, Check, X } from 'lucide-vue-next';
+import { LayoutDashboard, History, Zap, Settings, Search, Cpu, ChevronDown, Check, X, FolderOpen } from 'lucide-vue-next';
 import { computed } from 'vue';
 
 const route = useRoute();
@@ -66,8 +66,24 @@ async function activateProfile(profileId: string) {
           class="flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors"
           :class="route.path === '/' ? 'bg-primary/10 text-primary' : 'hover:bg-muted'"
         >
+          <LayoutDashboard class="w-4 h-4" />
+          <span class="text-sm font-medium">概览</span>
+        </RouterLink>
+        <RouterLink
+          to="/sessions"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors"
+          :class="route.path === '/sessions' ? 'bg-primary/10 text-primary' : 'hover:bg-muted'"
+        >
           <History class="w-4 h-4" />
-          <span class="text-sm font-medium">历史</span>
+          <span class="text-sm font-medium">会话</span>
+        </RouterLink>
+        <RouterLink
+          to="/assets"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors"
+          :class="route.path.startsWith('/assets') ? 'bg-primary/10 text-primary' : 'hover:bg-muted'"
+        >
+          <FolderOpen class="w-4 h-4" />
+          <span class="text-sm font-medium">资产</span>
         </RouterLink>
         <!-- Model Profile Selector -->
         <div class="relative">

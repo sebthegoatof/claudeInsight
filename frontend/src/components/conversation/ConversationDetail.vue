@@ -1,10 +1,24 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useConversationStore } from '../../stores/conversationStore';
+import { useLinkageStore } from '../../stores/linkageStore';
 import MessageList from './MessageList.vue';
+import ContextBar from './ContextBar.vue';
+import SlideOver from '@/components/ui/SlideOver.vue';
+import TaskPanel from '@/components/panels/TaskPanel.vue';
+import SkillPanel from '@/components/panels/SkillPanel.vue';
+import AgentPanel from '@/components/panels/AgentPanel.vue';
+import McpPanel from '@/components/panels/McpPanel.vue';
+import FileHistoryPanel from '@/components/panels/FileHistoryPanel.vue';
 import { X, Download, Clock, MessagesSquare, Cpu, ArrowDownToLine, ArrowUpFromLine, Zap } from 'lucide-vue-next';
 
 const conversationStore = useConversationStore();
+const linkageStore = useLinkageStore();
+
+// 侧边栏面板状态
+const slideOverOpen = ref(false);
+const slideOverTitle = ref('');
+const activePanelType = ref<'tasks' | 'skill' | 'agent' | 'mcp' | 'file-history' | null>(null);
 
 const parsedMessages = computed(() => {
   if (!conversationStore.currentSession?.messages) return [];
@@ -13,6 +27,7 @@ const parsedMessages = computed(() => {
 
 function closeDetail() {
   conversationStore.clearCurrentSession();
+  slideOverOpen.value = false;
 }
 
 // 导出会话为 JSON 文件
@@ -81,6 +96,46 @@ const primaryModel = computed(() => {
   const models = conversationStore.currentSession?.metrics?.modelsUsed;
   return models && models.length > 0 ? models[0] : null;
 });
+
+// 打开任务面板
+function openTasksPanel() {
+  activePanelType.value = 'tasks';
+  slideOverTitle.value = '任务与待办';
+  slideOverOpen.value = true;
+}
+
+// 打开文件历史面板
+function openFileHistoryPanel() {
+  activePanelType.value = 'file-history';
+  slideOverTitle.value = '文件变更历史';
+  slideOverOpen.value = true;
+}
+
+// 打开联动面板（只用本地状态，不更新 linkageStore 以避免触发 HistoryView 的重复面板）
+function openLinkagePanel(panel: 'skill' | 'agent' | 'mcp', item?: string) {
+  activePanelType.value = panel;
+  switch (panel) {
+    case 'skill':
+      slideOverTitle.value = 'Skill 详情';
+      break;
+    case 'agent':
+      slideOverTitle.value = 'Agent 详情';
+      break;
+    case 'mcp':
+      slideOverTitle.value = 'MCP 服务器';
+      break;
+  }
+  // 只设置 activeItem 用于面板内读取，不触发 activePanel 变更
+  linkageStore.activeItem = item || null;
+  slideOverOpen.value = true;
+}
+
+// 关闭侧边栏
+function closeSlideOver() {
+  slideOverOpen.value = false;
+  activePanelType.value = null;
+  linkageStore.activeItem = null;
+}
 </script>
 
 <template>
@@ -165,43 +220,144 @@ const primaryModel = computed(() => {
       </div>
     </div>
 
-    <!-- 消息列表 -->
-    <div class="flex-1 overflow-hidden">
-      <!-- 加载中 -->
-      <div v-if="conversationStore.detailLoading" class="h-full flex items-center justify-center">
-        <div class="flex flex-col items-center gap-3">
-          <div class="loading-dots">
-            <span></span>
-            <span></span>
-            <span></span>
+    <!-- Context Bar - 显示联动信息 -->
+    <ContextBar @open-tasks="openTasksPanel" @open-file-history="openFileHistoryPanel" />
+
+    <!-- 消息列表 - 带过渡动画 -->
+    <div class="flex-1 overflow-hidden relative">
+      <!-- 加载中状态 - 骨架屏 -->
+      <Transition name="fade" mode="out-in">
+        <div v-if="conversationStore.detailLoading" class="absolute inset-0 flex items-center justify-center bg-background/95 backdrop-blur-sm z-10">
+          <div class="flex flex-col items-center gap-4">
+            <!-- 会话骨架预览 -->
+            <div class="w-full max-w-md px-4">
+              <!-- 头部骨架 -->
+              <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-muted animate-pulse" />
+                <div class="flex-1">
+                  <div class="h-4 bg-muted rounded animate-pulse w-3/4 mb-2" />
+                  <div class="h-3 bg-muted rounded animate-pulse w-1/2" />
+                </div>
+              </div>
+
+              <!-- 消息骨架 -->
+              <div class="space-y-3">
+                <div class="flex gap-3">
+                  <div class="w-8 h-8 rounded-full bg-muted animate-pulse flex-shrink-0" />
+                  <div class="flex-1 space-y-2">
+                    <div class="h-3 bg-muted rounded animate-pulse" />
+                    <div class="h-3 bg-muted rounded animate-pulse w-5/6" />
+                    <div class="h-3 bg-muted rounded animate-pulse w-4/6" />
+                  </div>
+                </div>
+                <div class="flex gap-3">
+                  <div class="w-8 h-8 rounded-full bg-muted animate-pulse flex-shrink-0" />
+                  <div class="flex-1 space-y-2">
+                    <div class="h-3 bg-muted rounded animate-pulse w-2/3" />
+                    <div class="h-3 bg-muted rounded animate-pulse w-5/6" />
+                  </div>
+                </div>
+                <div class="flex gap-3">
+                  <div class="w-8 h-8 rounded-full bg-muted animate-pulse flex-shrink-0" />
+                  <div class="flex-1 space-y-2">
+                    <div class="h-3 bg-muted rounded animate-pulse" />
+                    <div class="h-3 bg-muted rounded animate-pulse w-3/4" />
+                    <div class="h-3 bg-muted rounded animate-pulse w-1/2" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 加载提示 -->
+            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+              <div class="loading-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <span>加载会话内容...</span>
+            </div>
           </div>
-          <span class="text-sm text-muted-foreground">加载中...</span>
         </div>
-      </div>
+      </Transition>
 
       <!-- 空状态 -->
-      <div
-        v-else-if="!conversationStore.currentSession"
-        class="h-full flex items-center justify-center p-8"
-      >
-        <div class="text-center max-w-xs">
-          <div class="w-16 h-16 mx-auto rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-            <MessagesSquare class="w-8 h-8 text-muted-foreground" />
+      <Transition name="fade" mode="out-in">
+        <div
+          v-if="!conversationStore.detailLoading && !conversationStore.currentSession"
+          class="h-full flex items-center justify-center p-8"
+        >
+          <div class="text-center max-w-xs">
+            <div class="w-16 h-16 mx-auto rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+              <MessagesSquare class="w-8 h-8 text-muted-foreground" />
+            </div>
+            <p class="text-base font-medium text-foreground">选择一个会话</p>
+            <p class="text-sm text-muted-foreground mt-1">
+              从左侧列表选择会话查看详情，或使用 <kbd class="px-1.5 py-0.5 bg-muted rounded text-xs">⌘K</kbd> 搜索
+            </p>
           </div>
-          <p class="text-base font-medium text-foreground">选择一个会话</p>
-          <p class="text-sm text-muted-foreground mt-1">
-            从左侧列表选择会话查看详情，或使用 <kbd class="px-1.5 py-0.5 bg-muted rounded text-xs">⌘K</kbd> 搜索
-          </p>
         </div>
-      </div>
+      </Transition>
 
-      <!-- 消息列表 -->
-      <MessageList v-else :messages="parsedMessages" />
+      <!-- 消息列表 - 滑入动画 -->
+      <Transition name="slide-up" mode="out-in">
+        <MessageList
+          v-if="!conversationStore.detailLoading && conversationStore.currentSession"
+          :messages="parsedMessages"
+          :file-history="linkageStore.sessionFileHistory"
+          @open-panel="openLinkagePanel"
+        />
+      </Transition>
     </div>
+
+    <!-- 侧边栏滑出面板 -->
+    <SlideOver
+      :open="slideOverOpen"
+      :title="slideOverTitle"
+      width="450px"
+      @close="closeSlideOver"
+    >
+      <TaskPanel v-if="activePanelType === 'tasks'" />
+      <SkillPanel v-else-if="activePanelType === 'skill'" :skill-name="linkageStore.activeItem || undefined" />
+      <AgentPanel v-else-if="activePanelType === 'agent'" :agent-type="linkageStore.activeItem || undefined" />
+      <McpPanel v-else-if="activePanelType === 'mcp'" />
+      <FileHistoryPanel v-else-if="activePanelType === 'file-history'" />
+    </SlideOver>
   </div>
 </template>
 
 <style scoped>
+/* 淡入淡出动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 滑入动画 */
+.slide-up-enter-active {
+  transition: all 0.3s ease-out;
+}
+
+.slide-up-leave-active {
+  transition: all 0.2s ease-in;
+}
+
+.slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* 加载动画 */
 .loading-dots {
   @apply flex gap-1;
 }
@@ -225,6 +381,29 @@ const primaryModel = computed(() => {
   }
   50% {
     transform: translateY(-6px);
+  }
+}
+
+/* 骨架屏闪烁动画 */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
   }
 }
 </style>

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
 import { useSearchStore } from '../../stores/searchStore';
 import { useConversationStore } from '../../stores/conversationStore';
 import { useLayoutStore } from '../../stores/layoutStore';
-import { Search, X, Loader2, FileText } from 'lucide-vue-next';
+import { Search, X, Loader2, FileText, Bot, Terminal, Sparkles } from 'lucide-vue-next';
 import { useDebounceFn } from '@vueuse/core';
+import type { SearchType } from '../../types/search';
 
+const router = useRouter();
 const searchStore = useSearchStore();
 const conversationStore = useConversationStore();
 const layoutStore = useLayoutStore();
@@ -101,20 +104,25 @@ function closeSearch() {
 }
 
 async function selectResult(result: typeof searchStore.results[0]) {
-  // 1. 关闭搜索框
   closeSearch();
 
-  // 2. 编码项目路径
-  const encodedPath = encodeProjectPath(result.project_path);
-
-  // 3. 设置当前项目（确保侧边栏正确选中）
-  layoutStore.setCurrentProject(encodedPath);
-
-  // 4. 加载该项目的会话列表
-  await conversationStore.fetchProjectSessions(encodedPath);
-
-  // 5. 选中和加载会话详情
-  conversationStore.selectSession(result.session_id, result.project_path);
+  // 根据结果类型处理
+  if (result.type === 'session' || !result.type) {
+    // 会话结果 - 原有逻辑
+    const encodedPath = encodeProjectPath(result.project_path);
+    layoutStore.setCurrentProject(encodedPath);
+    await conversationStore.fetchProjectSessions(encodedPath);
+    conversationStore.selectSession(result.session_id, result.project_path);
+  } else {
+    // 资产结果 - 跳转到资产管理页
+    router.push({
+      path: '/assets',
+      query: {
+        type: result.type,
+        id: result.assetId,
+      },
+    });
+  }
 }
 
 function highlightSnippet(snippet: string) {
@@ -149,6 +157,50 @@ function getDisplayTitle(result: typeof searchStore.results[0]) {
 
   // 否则使用 title
   return result.title || '无标题会话';
+}
+
+// 获取类型图标
+function getTypeIcon(type?: SearchType) {
+  switch (type) {
+    case 'agent':
+      return Bot;
+    case 'command':
+      return Terminal;
+    case 'skill':
+      return Sparkles;
+    default:
+      return FileText;
+  }
+}
+
+// 获取类型标签
+function getTypeLabel(type?: SearchType) {
+  switch (type) {
+    case 'agent':
+      return 'Agent';
+    case 'command':
+      return '命令';
+    case 'skill':
+      return '技能';
+    case 'session':
+      return '会话';
+    default:
+      return '会话';
+  }
+}
+
+// 获取类型颜色
+function getTypeColor(type?: SearchType) {
+  switch (type) {
+    case 'agent':
+      return 'text-purple-500 bg-purple-500/10';
+    case 'command':
+      return 'text-emerald-500 bg-emerald-500/10';
+    case 'skill':
+      return 'text-primary bg-primary/10';
+    default:
+      return 'text-muted-foreground bg-muted';
+  }
 }
 
 // 计算结果数量文本
@@ -203,7 +255,7 @@ defineExpose({
                 ref="inputRef"
                 v-model="localQuery"
                 type="text"
-                placeholder="搜索会话内容..."
+                placeholder="搜索会话、技能、Agent、命令..."
                 class="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
               />
               <Loader2
@@ -229,7 +281,7 @@ defineExpose({
                 <div class="w-12 h-12 mx-auto rounded-xl bg-muted/50 flex items-center justify-center mb-3">
                   <Search class="w-6 h-6 text-muted-foreground" />
                 </div>
-                <p class="text-sm text-muted-foreground">未找到相关会话</p>
+                <p class="text-sm text-muted-foreground">未找到相关内容</p>
                 <p class="text-xs text-muted-foreground mt-1">尝试其他关键词</p>
               </div>
 
@@ -241,8 +293,8 @@ defineExpose({
                 <div class="w-12 h-12 mx-auto rounded-xl bg-muted/50 flex items-center justify-center mb-3">
                   <FileText class="w-6 h-6 text-muted-foreground" />
                 </div>
-                <p class="text-sm text-muted-foreground">输入关键词搜索会话内容</p>
-                <p class="text-xs text-muted-foreground mt-1">支持全文检索</p>
+                <p class="text-sm text-muted-foreground">输入关键词搜索</p>
+                <p class="text-xs text-muted-foreground mt-1">支持会话、技能、Agent、命令</p>
               </div>
 
               <!-- 结果列表 -->
@@ -253,7 +305,7 @@ defineExpose({
                 <div ref="resultsContainerRef" class="py-1">
                   <button
                     v-for="(result, index) in searchStore.results"
-                    :key="result.id"
+                    :key="`${result.type}-${result.id}`"
                     :data-index="index"
                     @click="selectResult(result)"
                     @mouseenter="selectedIndex = index"
@@ -263,10 +315,23 @@ defineExpose({
                     ]"
                   >
                     <div class="flex items-start gap-3">
-                      <FileText class="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                      <component
+                        :is="getTypeIcon(result.type)"
+                        class="w-4 h-4 mt-0.5 flex-shrink-0"
+                        :class="result.type ? getTypeColor(result.type).split(' ')[0] : 'text-muted-foreground'"
+                      />
                       <div class="min-w-0 flex-1">
-                        <div class="text-sm font-medium truncate">
-                          {{ getDisplayTitle(result) }}
+                        <div class="flex items-center gap-2">
+                          <span class="text-sm font-medium truncate">
+                            {{ getDisplayTitle(result) }}
+                          </span>
+                          <span
+                            v-if="result.type && result.type !== 'session'"
+                            class="text-[10px] px-1.5 py-0.5 rounded"
+                            :class="getTypeColor(result.type)"
+                          >
+                            {{ getTypeLabel(result.type) }}
+                          </span>
                         </div>
                         <div
                           v-if="result.title && getDisplayTitle(result) !== result.title"
@@ -274,7 +339,12 @@ defineExpose({
                           v-html="highlightSnippet(result.snippet)"
                         />
                         <div class="text-xs text-muted-foreground/60 mt-1">
-                          {{ getProjectName(result.project_path) }}
+                          <template v-if="result.type === 'session' || !result.type">
+                            {{ getProjectName(result.project_path) }}
+                          </template>
+                          <template v-else-if="result.assetCategory">
+                            {{ result.assetCategory }}
+                          </template>
                         </div>
                       </div>
                     </div>

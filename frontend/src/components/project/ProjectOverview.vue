@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { useSkillStore } from '@/stores/skillStore';
 import { historyApi } from '@/api/history';
+import { linkageApi, type ProjectLinkStats } from '@/api/linkage';
 import type { Project, ProjectSpec } from '@/types/project';
 import type { ProjectMetrics } from '@/types/conversation';
 import ProjectSpecCard from './ProjectSpecCard.vue';
@@ -13,6 +14,10 @@ import {
   Zap,
   Clock,
   Cpu,
+  Bot,
+  Plug,
+  Sparkles,
+  Terminal,
 } from 'lucide-vue-next';
 
 const props = defineProps<{
@@ -25,6 +30,7 @@ const skillStore = useSkillStore();
 const loading = ref(false);
 const spec = ref<ProjectSpec | null>(null);
 const metrics = ref<ProjectMetrics | null>(null);
+const linkStats = ref<ProjectLinkStats | null>(null);
 
 // Computed - 优先使用 spec.content，否则使用 project.instructions
 const hasSpec = computed(() => !!(spec.value?.content || props.project.instructions));
@@ -42,12 +48,14 @@ async function loadDashboard(newSpec?: ProjectSpec) {
 
   loading.value = true;
   try {
-    const [specData, projectData] = await Promise.all([
+    const [specData, projectData, statsData] = await Promise.all([
       historyApi.getProjectSpec(props.project.encodedPath),
       historyApi.getProject(props.project.encodedPath),
+      linkageApi.getProjectLinkStats(props.project.encodedPath),
     ]);
     spec.value = specData;
     metrics.value = projectData.metrics || null;
+    linkStats.value = statsData;
   } catch (error) {
     console.error('Failed to load dashboard:', error);
   } finally {
@@ -155,6 +163,78 @@ function getModelShortName(model: string): string {
           <span class="text-xs">本地技能</span>
         </div>
         <div class="text-2xl font-semibold">{{ skillsCount }}</div>
+      </div>
+    </div>
+
+    <!-- Linkage Stats Grid -->
+    <div v-if="linkStats" class="grid grid-cols-4 gap-4 mb-6">
+      <div class="bg-card border border-border rounded-lg p-4">
+        <div class="flex items-center gap-2 text-muted-foreground mb-1">
+          <Plug class="w-4 h-4 text-emerald-500" />
+          <span class="text-xs">MCP 连接</span>
+        </div>
+        <div class="text-2xl font-semibold">{{ linkStats.mcpConnections.length }}</div>
+        <div v-if="linkStats.totalMcpInvocations > 0" class="text-xs text-muted-foreground mt-0.5">
+          {{ linkStats.totalMcpInvocations }} 次调用
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-4">
+        <div class="flex items-center gap-2 text-muted-foreground mb-1">
+          <Bot class="w-4 h-4 text-purple-500" />
+          <span class="text-xs">Agent 调用</span>
+        </div>
+        <div class="text-2xl font-semibold">{{ linkStats.agentCalls.length }}</div>
+        <div v-if="linkStats.totalAgentInvocations > 0" class="text-xs text-muted-foreground mt-0.5">
+          {{ linkStats.totalAgentInvocations }} 次调用
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-4">
+        <div class="flex items-center gap-2 text-muted-foreground mb-1">
+          <Sparkles class="w-4 h-4 text-primary" />
+          <span class="text-xs">技能调用</span>
+        </div>
+        <div class="text-2xl font-semibold">{{ linkStats.skillCalls.length }}</div>
+        <div v-if="linkStats.totalSkillInvocations > 0" class="text-xs text-muted-foreground mt-0.5">
+          {{ linkStats.totalSkillInvocations }} 次调用
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-lg p-4">
+        <div class="flex items-center gap-2 text-muted-foreground mb-1">
+          <Terminal class="w-4 h-4 text-orange-500" />
+          <span class="text-xs">命令调用</span>
+        </div>
+        <div class="text-2xl font-semibold">{{ linkStats.commandCalls.length }}</div>
+      </div>
+    </div>
+
+    <!-- MCP Connections -->
+    <div v-if="linkStats?.mcpConnections && linkStats.mcpConnections.length > 0" class="mb-4">
+      <div class="text-xs text-muted-foreground mb-2">MCP 服务器</div>
+      <div class="flex flex-wrap gap-2">
+        <span
+          v-for="mcp in linkStats.mcpConnections"
+          :key="mcp"
+          class="px-2 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-500"
+        >
+          {{ mcp }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Agent Calls -->
+    <div v-if="linkStats?.agentCalls && linkStats.agentCalls.length > 0" class="mb-4">
+      <div class="text-xs text-muted-foreground mb-2">Agent 类型</div>
+      <div class="flex flex-wrap gap-2">
+        <span
+          v-for="agent in linkStats.agentCalls"
+          :key="agent"
+          class="px-2 py-1 text-xs rounded-full bg-purple-500/10 text-purple-500"
+        >
+          {{ agent }}
+        </span>
       </div>
     </div>
 

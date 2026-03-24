@@ -3,6 +3,7 @@ import { fileScanner } from '../services/fileScanner.js';
 import { pathService } from '../services/pathService.js';
 import { specScanner } from '../services/specScanner.js';
 import { skillScanner } from '../services/skillScanner.js';
+import { linkageService } from '../services/linkageService.js';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
 import { existsSync, statSync, readdirSync, mkdirSync } from 'fs';
@@ -232,6 +233,79 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   /**
+   * 获取会话的联动信息（关联的 Skills/Agents/MCP/Models）
+   * GET /api/history/sessions/:sessionId/links
+   * Query params:
+   * - projectPath: 项目路径 (必需)
+   */
+  fastify.get<{ Params: { sessionId: string } }>(
+    '/sessions/:sessionId/links',
+    async (request, reply) => {
+      const { sessionId } = request.params;
+      const { projectPath } = request.query as { projectPath?: string };
+
+      if (!projectPath) {
+        reply.code(400);
+        return { error: 'projectPath query parameter is required' };
+      }
+
+      const links = await linkageService.analyzeSessionLinks(projectPath, sessionId);
+      const tasks = linkageService.getSessionTasks(sessionId);
+      const todos = linkageService.getSessionTodos(sessionId);
+
+      return {
+        sessionId,
+        ...links,
+        tasks,
+        todos,
+      };
+    }
+  );
+
+  /**
+   * 获取会话的文件变更历史
+   * GET /api/history/sessions/:sessionId/file-history
+   * Query params:
+   * - projectPath: 项目路径 (必需)
+   */
+  fastify.get<{ Params: { sessionId: string } }>(
+    '/sessions/:sessionId/file-history',
+    async (request, reply) => {
+      const { sessionId } = request.params;
+      const { projectPath } = request.query as { projectPath?: string };
+
+      if (!projectPath) {
+        reply.code(400);
+        return { error: 'projectPath query parameter is required' };
+      }
+
+      const { backupService } = await import('../services/backupService.js');
+      return backupService.getSessionFileHistory(sessionId, projectPath);
+    }
+  );
+
+  /**
+   * 获取项目的联动统计（MCP 连接数、Agent 调用次数等）
+   * GET /api/history/projects/:encodedPath/linkage-stats
+   */
+  fastify.get<{ Params: { encodedPath: string } }>(
+    '/projects/:encodedPath/linkage-stats',
+    async (request, reply) => {
+      const { encodedPath } = request.params;
+
+      // 解码项目路径
+      const projectPath = fileScanner.resolveProjectPath(encodedPath);
+      if (!projectPath) {
+        reply.code(404);
+        return { error: 'Project not found' };
+      }
+
+      const stats = await linkageService.analyzeProjectLinks(projectPath);
+      return stats;
+    }
+  );
+
+  /**
    * 读取完整的 tool-result 日志文件（按需加载）
    * GET /api/history/sessions/:sessionId/tool-result
    * Query params:
@@ -436,13 +510,17 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
    * 导出会话为 ZIP 文件
    * POST /api/history/sessions/export
    * Body: { projectPath: string, sessionIds: string[] }
+   * Query params:
+   * - includeAssets: 是否包含关联资产 (Skills/Agents/Commands/OutputStyles)
    * - projectPath: 项目路径（必需）
    * - sessionIds: 会话 ID 数组，如果包含 "all" 或为空则导出该项目下所有会话
    */
   fastify.post<{
     Body: { projectPath: string; sessionIds: string[] };
+    Querystring: { includeAssets?: string };
   }>('/sessions/export', async (request, reply) => {
     const { projectPath, sessionIds } = request.body;
+    const { includeAssets } = request.query;
 
     if (!projectPath) {
       reply.code(400);
@@ -494,19 +572,105 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
       console.error('Archive error:', err);
     });
 
+    // 收集所有关联资产
+    const collectedAssets = {
+      skills: new Set<string>(),
+      agents: new Set<string>(),
+      commands: new Set<string>(),
+    };
+
     // 遍历会话并添加文件
     for (const sessionId of sessionsToExport) {
       // 添加主干文件 [UUID].jsonl
       const jsonlPath = join(projectDir, `${sessionId}.jsonl`);
       if (existsSync(jsonlPath)) {
-        archive.file(jsonlPath, { name: `${sessionId}.jsonl` });
+        archive.file(jsonlPath, { name: `sessions/${sessionId}.jsonl` });
       }
 
       // 添加支线目录 [UUID]/
       const sessionDir = join(projectDir, sessionId);
       if (existsSync(sessionDir) && statSync(sessionDir).isDirectory()) {
-        archive.directory(sessionDir, sessionId);
+        archive.directory(sessionDir, `sessions/${sessionId}`);
       }
+
+      // 分析会话链接，收集资产
+      if (includeAssets === 'true') {
+        try {
+          const links = await linkageService.analyzeSessionLinks(projectPath, sessionId);
+          links.skills.forEach(s => collectedAssets.skills.add(s.name));
+          links.agents.forEach(a => collectedAssets.agents.add(a.type));
+          links.commands.forEach(c => collectedAssets.commands.add(c));
+        } catch {
+          // ignore linkage errors
+        }
+      }
+    }
+
+    // 添加关联资产
+    if (includeAssets === 'true') {
+      const claudePath = pathService.getClaudePath();
+
+      // 添加 Skills
+      if (collectedAssets.skills.size > 0) {
+        const skillsDir = join(claudePath, 'commands');
+        if (existsSync(skillsDir)) {
+          for (const skillName of collectedAssets.skills) {
+            // 查找匹配的 skill 文件
+            const skillPath = join(skillsDir, 'zcf', `${skillName}.md`);
+            if (existsSync(skillPath)) {
+              archive.file(skillPath, { name: `assets/skills/${skillName}.md` });
+            }
+          }
+        }
+      }
+
+      // 添加 Agents
+      if (collectedAssets.agents.size > 0) {
+        const agentsDir = join(claudePath, 'agents');
+        if (existsSync(agentsDir)) {
+          for (const agentType of collectedAssets.agents) {
+            // 查找匹配的 agent 文件
+            const agentPath = join(agentsDir, 'zcf', `${agentType}.md`);
+            if (existsSync(agentPath)) {
+              archive.file(agentPath, { name: `assets/agents/${agentType}.md` });
+            }
+          }
+        }
+      }
+
+      // 添加 Commands
+      if (collectedAssets.commands.size > 0) {
+        const commandsDir = join(claudePath, 'commands');
+        if (existsSync(commandsDir)) {
+          for (const cmdName of collectedAssets.commands) {
+            // 移除前导斜杠
+            const cleanName = cmdName.replace(/^\//, '');
+            const cmdPath = join(commandsDir, 'zcf', `${cleanName}.md`);
+            if (existsSync(cmdPath)) {
+              archive.file(cmdPath, { name: `assets/commands/${cleanName}.md` });
+            }
+          }
+        }
+      }
+
+      // 添加项目规范文件
+      const spec = specScanner.scanProjectSpec(projectPath);
+      if (spec) {
+        archive.append(spec.content, { name: 'project/CLAUDE.md' });
+      }
+
+      // 添加清单文件
+      const manifest = {
+        exportDate: new Date().toISOString(),
+        projectPath,
+        sessions: sessionsToExport,
+        assets: {
+          skills: Array.from(collectedAssets.skills),
+          agents: Array.from(collectedAssets.agents),
+          commands: Array.from(collectedAssets.commands),
+        },
+      };
+      archive.append(JSON.stringify(manifest, null, 2), { name: 'manifest.json' });
     }
 
     // 使用 hijack 接管响应，然后手动设置头部并管道流

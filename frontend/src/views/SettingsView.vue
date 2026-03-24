@@ -8,8 +8,6 @@ import {
   AlertCircle,
   Info,
   Terminal,
-  Database,
-  Zap,
   Save,
 } from 'lucide-vue-next';
 
@@ -134,16 +132,6 @@ const platformLabel = computed(() => {
   };
   return labels[pathInfo.value.platform];
 });
-
-// 格式化数字
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
-  } else if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K';
-  }
-  return num.toString();
-}
 </script>
 
 <template>
@@ -186,76 +174,6 @@ function formatNumber(num: number): string {
       </div>
 
       <template v-else>
-        <!-- 数据库统计 -->
-        <div class="border border-border rounded-lg overflow-hidden">
-          <div class="px-4 py-3 bg-muted/30 border-b border-border flex items-center gap-2">
-            <Database class="w-4 h-4 text-primary" />
-            <span class="font-medium">数据库统计</span>
-          </div>
-          <div class="p-4">
-            <!-- 基础统计 -->
-            <div class="grid grid-cols-3 gap-4 mb-4">
-              <div class="text-center p-3 bg-muted/30 rounded-lg">
-                <div class="text-2xl font-semibold text-primary">
-                  {{ appStore.stats.totalProjects }}
-                </div>
-                <div class="text-xs text-muted-foreground mt-1">项目</div>
-              </div>
-              <div class="text-center p-3 bg-muted/30 rounded-lg">
-                <div class="text-2xl font-semibold text-primary">
-                  {{ appStore.stats.totalConversations }}
-                </div>
-                <div class="text-xs text-muted-foreground mt-1">会话</div>
-              </div>
-              <div class="text-center p-3 bg-muted/30 rounded-lg">
-                <div class="text-2xl font-semibold text-primary">
-                  {{ appStore.stats.totalMessages }}
-                </div>
-                <div class="text-xs text-muted-foreground mt-1">消息</div>
-              </div>
-            </div>
-            <!-- Token 统计 -->
-            <div class="border-t border-border pt-4">
-              <div class="flex items-center gap-2 mb-3">
-                <Zap class="w-4 h-4 text-yellow-500" />
-                <span class="text-sm font-medium">Token 统计</span>
-              </div>
-              <div class="grid grid-cols-5 gap-3">
-                <div class="text-center p-3 bg-blue-500/10 rounded-lg">
-                  <div class="text-lg font-semibold text-blue-600 dark:text-blue-400">
-                    {{ formatNumber(appStore.stats.totalTokens) }}
-                  </div>
-                  <div class="text-xs text-muted-foreground mt-1">总计</div>
-                </div>
-                <div class="text-center p-3 bg-green-500/10 rounded-lg">
-                  <div class="text-lg font-semibold text-green-600 dark:text-green-400">
-                    {{ formatNumber(appStore.stats.inputTokens) }}
-                  </div>
-                  <div class="text-xs text-muted-foreground mt-1">输入</div>
-                </div>
-                <div class="text-center p-3 bg-purple-500/10 rounded-lg">
-                  <div class="text-lg font-semibold text-purple-600 dark:text-purple-400">
-                    {{ formatNumber(appStore.stats.outputTokens) }}
-                  </div>
-                  <div class="text-xs text-muted-foreground mt-1">输出</div>
-                </div>
-                <div class="text-center p-3 bg-orange-500/10 rounded-lg">
-                  <div class="text-lg font-semibold text-orange-600 dark:text-orange-400">
-                    {{ formatNumber(appStore.stats.cacheHitTokens) }}
-                  </div>
-                  <div class="text-xs text-muted-foreground mt-1">缓存命中</div>
-                </div>
-                <div class="text-center p-3 bg-cyan-500/10 rounded-lg">
-                  <div class="text-lg font-semibold text-cyan-600 dark:text-cyan-400">
-                    {{ formatNumber(appStore.stats.cacheCreationTokens) }}
-                  </div>
-                  <div class="text-xs text-muted-foreground mt-1">缓存写入</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- Claude 路径设置 -->
         <div class="border border-border rounded-lg overflow-hidden">
           <div class="px-4 py-3 bg-muted/30 border-b border-border flex items-center gap-2">
@@ -335,7 +253,7 @@ function formatNumber(num: number): string {
           </div>
           <div class="p-4 text-sm text-muted-foreground">
             <p><strong class="text-foreground">Claude Insight</strong> - Claude Code 历史分析工具</p>
-            <p class="mt-2">版本: 1.0.0</p>
+            <p class="mt-2">版本: 1.1.0</p>
             <p class="mt-1">用于浏览、搜索和分析 Claude Code 的对话历史记录。</p>
           </div>
         </div>

@@ -5,6 +5,8 @@ import settingsRoutes from './routes/settings.js';
 import historyRoutes from './routes/history.js';
 import skillsRoutes from './routes/skills.js';
 import configRoutes from './routes/config.js';
+import statsRoutes from './routes/stats.js';
+import assetsRoutes from './routes/assets.js';
 
 export async function buildApp() {
   const fastify = Fastify({
@@ -43,6 +45,8 @@ export async function buildApp() {
   await fastify.register(historyRoutes, { prefix: '/api/history' });
   await fastify.register(skillsRoutes, { prefix: '/api/skills' });
   await fastify.register(configRoutes, { prefix: '/api/config' });
+  await fastify.register(statsRoutes, { prefix: '/api/stats' });
+  await fastify.register(assetsRoutes, { prefix: '/api/assets' });
 
   return fastify;
 }

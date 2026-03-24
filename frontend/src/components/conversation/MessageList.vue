@@ -1,15 +1,25 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import MessageItem from './MessageItem.vue';
+import AssistantTurn from './AssistantTurn.vue';
 import ToolActionGroup from './ToolActionGroup.vue';
+import { useConversationStore } from '../../stores/conversationStore';
 import { Eye, EyeOff, Filter, ChevronDown, ChevronRight, Terminal } from 'lucide-vue-next';
-import type { Message, DisplayItem } from '../../types/conversation';
+import type { Message, DisplayItem, TurnSegment } from '../../types/conversation';
+import type { SessionFileHistory } from '../../api/backup';
 
 interface Props {
   messages: Message[];
+  fileHistory?: SessionFileHistory | null;
 }
 
 const props = defineProps<Props>();
+
+const emit = defineEmits<{
+  (e: 'openPanel', panel: 'skill' | 'agent' | 'mcp', item?: string): void;
+}>();
+
+const conversationStore = useConversationStore();
 
 // 显示系统消息开关（控制 system_event, interrupt, error 的显示）
 const showSystemMessages = ref(false);
@@ -76,51 +86,93 @@ const validCount = computed(() => {
 });
 
 /**
- * 核心：将拍平的消息列表分组为 DisplayItem 数组
- * - user_text / assistant_text / chat → 直接作为 message 项
- * - 连续的 tool_action → 合并为 tool_group 项
- * - system_event / interrupt / error → 根据 showSystemMessages 开关决定是否显示
+ * 核心：将拍平的消息列表按"对话轮次"分组
+ * - 用户消息 → 独立 message 项
+ * - 两条用户消息之间的所有助手内容 → 合并为一个 assistant_turn
+ *   - 连续 tool_action → tool_group segment
+ *   - assistant_text → text segment
+ *   - system_event/interrupt/error → system segment（受 toggle 控制）
  */
 const displayItems = computed<DisplayItem[]>(() => {
   const items: DisplayItem[] = [];
-  let currentToolGroup: Message[] = [];
+  let i = 0;
+  const msgs = props.messages;
 
-  function flushToolGroup() {
-    if (currentToolGroup.length > 0) {
-      items.push({ kind: 'tool_group', actions: [...currentToolGroup] });
-      currentToolGroup = [];
-    }
-  }
+  while (i < msgs.length) {
+    const msg = msgs[i];
 
-  for (const msg of props.messages) {
-    const mt = msg.message_type;
-
-    // tool_action → 收集到当前工具组
-    if (mt === 'tool_action') {
-      currentToolGroup.push(msg);
+    // 用户消息 → 独立展示，标志新轮次开始（排除子代理的 prompt，它们虽然 role=user 但不是人类输入）
+    if (msg.role === 'user' && (msg.message_type === 'user_text' || msg.message_type === 'chat') && !msg.agent_name) {
+      items.push({ kind: 'message', message: msg });
+      i++;
       continue;
     }
 
-    // 遇到非 tool_action 消息，先把之前积累的工具组刷出来
+    // 非用户消息 → 收集到一个 assistant_turn
+    const segments: TurnSegment[] = [];
+    let currentToolGroup: Message[] = [];
+    let turnModel: string | undefined;
+
+    function flushToolGroup() {
+      if (currentToolGroup.length > 0) {
+        segments.push({ kind: 'tool_group', actions: [...currentToolGroup] });
+        currentToolGroup = [];
+      }
+    }
+
+    while (i < msgs.length) {
+      const m = msgs[i];
+
+      // 遇到下一条人类用户消息，结束当前 turn
+      if (m.role === 'user' && (m.message_type === 'user_text' || m.message_type === 'chat') && !m.agent_name) {
+        break;
+      }
+
+      // 记录 turn 使用的模型
+      if (m.model && !turnModel) {
+        turnModel = m.model;
+      }
+
+      if (m.message_type === 'tool_action') {
+        currentToolGroup.push(m);
+      } else if (m.message_type === 'system_event' || m.message_type === 'interrupt' || m.message_type === 'error') {
+        if (showSystemMessages.value) {
+          flushToolGroup();
+          segments.push({ kind: 'system', message: m });
+        }
+      } else {
+        // assistant_text / chat 等
+        flushToolGroup();
+        segments.push({ kind: 'text', message: m });
+      }
+
+      i++;
+    }
+
     flushToolGroup();
 
-    // system_event / interrupt / error → 受系统消息开关控制
-    if (mt === 'system_event' || mt === 'interrupt' || mt === 'error') {
-      if (showSystemMessages.value) {
-        items.push({ kind: 'message', message: msg });
-      }
-      continue;
+    if (segments.length > 0) {
+      items.push({ kind: 'assistant_turn', segments, model: turnModel });
     }
-
-    // user_text / assistant_text / chat → 始终展示
-    items.push({ kind: 'message', message: msg });
   }
-
-  // 清空残余
-  flushToolGroup();
 
   return items;
 });
+
+// fileHistory prop 透传给 AssistantTurn / MessageItem
+const fileHistory = computed(() => props.fileHistory);
+
+// 获取下一条用户消息的时间戳（用于确定文件变更的时间范围）
+function getNextMessageTime(currentIndex: number): string | null {
+  const items = displayItems.value;
+  for (let i = currentIndex + 1; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === 'message') {
+      return item.message.timestamp || null;
+    }
+  }
+  return null;
+}
 </script>
 
 <template>
@@ -205,17 +257,31 @@ const displayItems = computed<DisplayItem[]>(() => {
 
       <!-- 渲染分组后的 DisplayItem -->
       <template v-for="(item, index) in displayItems" :key="index">
-        <!-- 普通消息气泡 -->
+        <!-- 用户消息气泡 -->
         <MessageItem
           v-if="item.kind === 'message'"
           :message="item.message"
           :index="index"
+          :file-history="fileHistory"
+          :session-id="conversationStore.currentSession?.sessionId"
+          :next-message-time="getNextMessageTime(index)"
         />
 
-        <!-- 工具操作折叠面板 -->
+        <!-- 助手回合容器 -->
+        <AssistantTurn
+          v-else-if="item.kind === 'assistant_turn'"
+          :segments="item.segments"
+          :model="item.model"
+          :file-history="fileHistory"
+          :session-id="conversationStore.currentSession?.sessionId"
+          @open-panel="(panel, item) => emit('openPanel', panel, item)"
+        />
+
+        <!-- 独立工具组（兼容旧类型） -->
         <ToolActionGroup
           v-else-if="item.kind === 'tool_group'"
           :actions="item.actions"
+          @open-panel="(panel, item) => emit('openPanel', panel, item)"
         />
       </template>
     </div>

@@ -5,8 +5,28 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'home',
+      name: 'dashboard',
+      component: () => import('@/views/DashboardView.vue'),
+    },
+    {
+      path: '/sessions',
+      name: 'sessions',
       component: () => import('@/views/HistoryView.vue'),
+    },
+    {
+      path: '/sessions/compare',
+      name: 'session-compare',
+      component: () => import('@/views/CompareView.vue'),
+    },
+    {
+      path: '/tasks',
+      name: 'tasks',
+      component: () => import('@/views/TasksView.vue'),
+    },
+    {
+      path: '/assets',
+      name: 'assets',
+      component: () => import('@/views/AssetsView.vue'),
     },
     {
       path: '/plugins',
