@@ -638,7 +638,17 @@ export class FileScanner {
    * 两种情况都过滤 prompt_suggestion 文件，按时间戳正序排列。
    */
   async getSessionDetail(sessionId: string, projectPath: string): Promise<SessionDetail | null> {
-    const projectDir = this.resolveProjectDir(projectPath);
+    let projectDir = this.resolveProjectDir(projectPath);
+
+    // 如果通过 projectPath 找不到项目目录，尝试通过 sessionId 查找
+    if (!projectDir) {
+      const found = this.findProjectBySessionId(sessionId);
+      if (found) {
+        projectDir = join(pathService.getHistoryPath(), found.encodedPath);
+        // 更新 projectPath 为正确的路径
+        projectPath = found.projectPath;
+      }
+    }
 
     if (!projectDir) {
       return null;
@@ -935,6 +945,107 @@ export class FileScanner {
             // 将 content 拍平为独立条目
             const entries = this.flattenContentBlocks(record.message);
 
+            // 提取 model 和 usage 字段（所有条目共享）
+            const messageModel = record.message.model || record.model;
+            const messageUsage = record.message.usage || record.usage;
+            const tokenUsage = messageUsage ? {
+              input_tokens: messageUsage.input_tokens || 0,
+              output_tokens: messageUsage.output_tokens || 0,
+              cache_creation_input_tokens: messageUsage.cache_creation_input_tokens,
+              cache_read_input_tokens: messageUsage.cache_read_input_tokens,
+            } : undefined;
+
+            // 用户消息（非 meta）：将 text 和 image 合并为单条消息，避免被拆成多个气泡
+            if (record.type === 'user' && !isMeta) {
+              let mergedContent = '';
+              const mergedImages: MessageImage[] = [];
+              const otherEntries: typeof entries = [];
+
+              for (const entry of entries) {
+                if (entry.type === 'text') {
+                  mergedContent += (mergedContent ? '\n' : '') + (entry.content || '');
+                } else if (entry.type === 'image' && entry.images?.length) {
+                  mergedImages.push(...entry.images);
+                } else {
+                  otherEntries.push(entry);
+                }
+              }
+
+              // 推入合并后的用户消息
+              if (mergedContent || mergedImages.length) {
+                const classification = classifyMessage(mergedContent, record.type, record.message.role);
+                messages.push({
+                  role: record.message.role,
+                  content: mergedContent,
+                  timestamp,
+                  message_type: classification.messageType,
+                  is_system_noise: classification.isNoise,
+                  sub_type: classification.subType,
+                  images: mergedImages.length > 0 ? mergedImages : undefined,
+                  agent_name: agentName,
+                  model: messageModel,
+                  tokenUsage,
+                });
+
+                if (timestamp) {
+                  if (!firstMessageAt || timestamp < firstMessageAt) firstMessageAt = timestamp;
+                  if (!lastMessageAt || timestamp > lastMessageAt) lastMessageAt = timestamp;
+                }
+              }
+
+              // 其他条目（如 tool_result）仍单独处理
+              for (const entry of otherEntries) {
+                let messageType: MessageType;
+                let isNoise: boolean;
+                let subType: string | undefined;
+
+                if (entry.type === 'tool_result') {
+                  messageType = 'tool_action';
+                  isNoise = true;
+                  subType = '工具结果';
+                } else {
+                  messageType = 'system_event';
+                  isNoise = true;
+                  subType = entry.type;
+                }
+
+                let hasFullOutput: boolean | undefined;
+                let fullOutputPath: string | undefined;
+                if (entry.type === 'tool_result') {
+                  const truncation = this.detectTruncatedOutput(entry.content);
+                  if (truncation.hasFullOutput) {
+                    hasFullOutput = true;
+                    fullOutputPath = truncation.fullOutputPath;
+                  }
+                }
+
+                if (entry.content || entry.images?.length || entry.tool_name) {
+                  messages.push({
+                    role: record.message.role,
+                    content: entry.content || '',
+                    timestamp,
+                    message_type: messageType,
+                    is_system_noise: isNoise,
+                    sub_type: subType,
+                    images: entry.images,
+                    tool_names: entry.tool_name ? [entry.tool_name] : undefined,
+                    tool_name: entry.tool_name,
+                    tool_input: entry.tool_input,
+                    tool_use_id: entry.tool_use_id,
+                    has_full_output: hasFullOutput,
+                    full_output_path: fullOutputPath,
+                    agent_name: agentName,
+                    model: messageModel,
+                    tokenUsage,
+                  });
+                }
+              }
+
+              // 跳过下面的通用循环
+              return;
+            }
+
+            // 助手消息 / meta 消息：按条目逐个处理（保持原有逻辑）
             for (const entry of entries) {
               let messageType: MessageType;
               let isNoise: boolean;
@@ -986,12 +1097,6 @@ export class FileScanner {
 
               // 只有有实质内容的条目才加入
               if (entry.content || entry.images?.length || entry.tool_name) {
-                // 提取 model 和 usage 字段
-                // model 可能在 message 内部或顶层
-                const messageModel = record.message.model || record.model;
-                // usage 可能在 message 内部或顶层
-                const messageUsage = record.message.usage || record.usage;
-
                 messages.push({
                   role: record.message.role,
                   content: entry.content || '',
@@ -1007,14 +1112,8 @@ export class FileScanner {
                   has_full_output: hasFullOutput,
                   full_output_path: fullOutputPath,
                   agent_name: agentName,
-                  // 添加 model 和 tokenUsage 字段
                   model: messageModel,
-                  tokenUsage: messageUsage ? {
-                    input_tokens: messageUsage.input_tokens || 0,
-                    output_tokens: messageUsage.output_tokens || 0,
-                    cache_creation_input_tokens: messageUsage.cache_creation_input_tokens,
-                    cache_read_input_tokens: messageUsage.cache_read_input_tokens,
-                  } : undefined,
+                  tokenUsage,
                 });
 
                 if (timestamp) {
@@ -1155,35 +1254,72 @@ export class FileScanner {
 
   /**
    * 解析会话所在的项目目录
+   * 支持多种查找策略：
+   * 1. 通过 sessions-index.json 中的 originalPath 精确匹配
+   * 2. 通过编码路径回退匹配
+   * 3. 通过目录名模糊匹配（处理中文路径编码问题）
    */
   resolveProjectDir(projectPath: string): string | null {
     const projectsPath = pathService.getHistoryPath();
 
-    if (existsSync(projectsPath)) {
-      const entries = readdirSync(projectsPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    if (!existsSync(projectsPath)) {
+      return null;
+    }
 
-        const indexPath = join(projectsPath, entry.name, 'sessions-index.json');
-        try {
-          if (existsSync(indexPath)) {
-            const indexContent = readFileSync(indexPath, 'utf-8');
-            const indexData = JSON.parse(indexContent);
-            if (indexData.originalPath === projectPath) {
-              return join(projectsPath, entry.name);
-            }
+    const entries = readdirSync(projectsPath, { withFileTypes: true });
+
+    // 策略1: 通过 sessions-index.json 中的 originalPath 精确匹配
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+
+      const indexPath = join(projectsPath, entry.name, 'sessions-index.json');
+      try {
+        if (existsSync(indexPath)) {
+          const indexContent = readFileSync(indexPath, 'utf-8');
+          const indexData = JSON.parse(indexContent);
+          if (indexData.originalPath === projectPath) {
+            return join(projectsPath, entry.name);
           }
-        } catch {
-          // 忽略
         }
+      } catch {
+        // 忽略
       }
     }
 
-    // 回退到编码方式
+    // 策略2: 通过编码路径回退匹配
     const encodedPath = this.encodeProjectPath(projectPath);
     const fallbackDir = join(projectsPath, encodedPath);
     if (existsSync(fallbackDir)) {
       return fallbackDir;
+    }
+
+    // 策略3: 模糊匹配 - 处理中文路径编码差异
+    // 例如: projectPath="/Users/mac/Desktop/项目/704yunzhi_xinch_10.0-master/seeyon/m3/apps/v5/collaboration/html"
+    // 编码后可能变成: -Users-mac-Desktop----704yunzhi-xinch-10-0-master-seeyon-m3-apps-v5-collaboration-html
+    // 我们尝试将路径中的关键部分与目录名进行匹配
+    const pathParts = projectPath.split('/').filter(p => p.length > 0);
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+
+      // 跳过已经检查过的目录
+      const entryPath = join(projectsPath, entry.name);
+      if (existsSync(join(entryPath, 'sessions-index.json'))) {
+        continue; // 已经在策略1中处理过
+      }
+
+      // 检查目录名是否与项目路径的关键部分匹配
+      // 提取目录名中的关键部分（如项目名）
+      const projectName = pathParts[pathParts.length - 1];
+      if (projectName && entry.name.toLowerCase().includes(projectName.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
+        // 检查该目录下是否有会话文件
+        const subEntries = readdirSync(entryPath);
+        const hasSession = subEntries.some(f =>
+          f.endsWith('.jsonl') || (f.endsWith('.json') && f !== 'sessions-index.json')
+        );
+        if (hasSession) {
+          return entryPath;
+        }
+      }
     }
 
     return null;
@@ -1533,6 +1669,57 @@ export class FileScanner {
    */
   private escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // ==================== Session -> Project 反向查找 ====================
+
+  private sessionProjectCache: Map<string, { projectPath: string; encodedPath: string }> | null = null;
+
+  /**
+   * 从 sessionId 反向查找所属项目
+   */
+  findProjectBySessionId(sessionId: string): { projectPath: string; encodedPath: string } | null {
+    // 尝试从缓存中查找
+    if (this.sessionProjectCache) {
+      return this.sessionProjectCache.get(sessionId) || null;
+    }
+
+    // 首次调用时构建缓存
+    this.sessionProjectCache = new Map();
+    const projectsPath = pathService.getHistoryPath();
+    if (!existsSync(projectsPath)) return null;
+
+    try {
+      const projectDirs = readdirSync(projectsPath, { withFileTypes: true });
+      for (const dir of projectDirs) {
+        if (!dir.isDirectory() || dir.name.startsWith('.')) continue;
+        const projectDir = join(projectsPath, dir.name);
+        const projectPath = this.resolveProjectPath(dir.name);
+
+        try {
+          const entries = readdirSync(projectDir);
+          for (const entry of entries) {
+            if (entry.endsWith('.jsonl')) {
+              const sid = entry.replace('.jsonl', '');
+              this.sessionProjectCache.set(sid, { projectPath, encodedPath: dir.name });
+            }
+          }
+        } catch {
+          // skip
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return this.sessionProjectCache.get(sessionId) || null;
+  }
+
+  /**
+   * 清除 session->project 缓存（当需要刷新时调用）
+   */
+  clearSessionProjectCache(): void {
+    this.sessionProjectCache = null;
   }
 }
 

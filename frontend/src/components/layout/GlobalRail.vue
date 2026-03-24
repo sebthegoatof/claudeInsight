@@ -4,11 +4,13 @@ import { useAppStore } from '@/stores/appStore';
 import { useSearchStore } from '@/stores/searchStore';
 import ProfileSelector from '@/components/model/ProfileSelector.vue';
 import {
+  LayoutDashboard,
   History,
   Search,
-  Puzzle,
   Settings,
   Terminal,
+  FolderOpen,
+  ListTodo,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -25,9 +27,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { id: 'all', icon: History, label: '全部会话', route: '/' },
+  { id: 'dashboard', icon: LayoutDashboard, label: '概览', route: '/' },
+  { id: 'all', icon: History, label: '全部会话', route: '/sessions' },
+  { id: 'tasks', icon: ListTodo, label: '任务', route: '/tasks' },
+  { id: 'assets', icon: FolderOpen, label: '资产管理', route: '/assets' },
   { id: 'search', icon: Search, label: '全局搜索', action: 'openSearch' },
-  { id: 'plugins', icon: Puzzle, label: '插件市场', route: '/plugins' },
   { id: 'settings', icon: Settings, label: '设置', route: '/settings' },
 ];
 
@@ -40,10 +44,11 @@ function handleNavClick(item: NavItem) {
 }
 
 function isActive(item: NavItem): boolean {
+  if (!item.route) return false;
   if (item.route === '/') {
     return route.path === '/';
   }
-  return route.path.startsWith(item.route || '');
+  return route.path.startsWith(item.route);
 }
 </script>
 

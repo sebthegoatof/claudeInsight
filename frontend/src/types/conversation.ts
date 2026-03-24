@@ -131,8 +131,30 @@ export interface PaginatedResponse<T> {
 }
 
 /**
+ * 助手回合中的内容段
+ */
+export type TurnSegment =
+  | { kind: 'text'; message: Message }
+  | { kind: 'tool_group'; actions: Message[] }
+  | { kind: 'system'; message: Message };
+
+/**
+ * 文件版本徽章数据（用于工具操作内联显示）
+ */
+export interface FileVersionBadge {
+  filePath: string;
+  versions: Array<{
+    backupFileName: string;
+    version: number;
+    size: number;
+    backupTime: string;
+  }>;
+}
+
+/**
  * 前端展示模型：消息分组后的显示项
  */
 export type DisplayItem =
   | { kind: 'message'; message: Message }
-  | { kind: 'tool_group'; actions: Message[] };
+  | { kind: 'tool_group'; actions: Message[] }
+  | { kind: 'assistant_turn'; segments: TurnSegment[]; model?: string; tokenUsage?: TokenUsage };

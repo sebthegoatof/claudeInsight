@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import MessageContent from './MessageContent.vue';
+import FileVersionBadges from './FileVersionBadges.vue';
 import type { Message } from '../../types/conversation';
+import type { SessionFileHistory } from '../../api/backup';
 import {
   User,
   Sparkles,
@@ -14,11 +16,15 @@ import {
   X,
   Cpu,
   Zap,
+  FileCode,
 } from 'lucide-vue-next';
 
 interface Props {
   message: Message;
   index: number;
+  fileHistory?: SessionFileHistory | null;
+  sessionId?: string;
+  nextMessageTime?: string | null;  // 下一条消息的时间戳，用于确定文件变更的时间范围
 }
 
 const props = defineProps<Props>();
@@ -72,8 +78,8 @@ const canExpand = computed(() => {
   return props.message.content && props.message.content.length > 200;
 });
 
-// 预览内容
-const previewContent = computed(() => {
+// 预览内容（噪音消息用）
+const noisePreview = computed(() => {
   if (!props.message.content) return '';
   if (!canExpand.value || isExpanded.value) return props.message.content;
   return props.message.content.slice(0, 200) + '...';
@@ -90,6 +96,40 @@ const hasTokenUsage = computed(() => {
     props.message.tokenUsage.input_tokens > 0 ||
     props.message.tokenUsage.output_tokens > 0
   );
+});
+
+// 获取该用户消息后发生的文件变更（直到下一条用户消息）
+const userFileChanges = computed(() => {
+  if (!isUser.value || !props.fileHistory?.files?.length || !props.message.timestamp) return [];
+
+  const messageTime = new Date(props.message.timestamp);
+  // 结束时间：下一条消息时间，或者当前时间 + 5 分钟
+  const endTime = props.nextMessageTime ? new Date(props.nextMessageTime) : new Date(messageTime.getTime() + 5 * 60 * 1000);
+
+  // 扩展时间范围：向前 2 秒，向后直到下一条消息
+  const searchStart = new Date(messageTime.getTime() - 2000);
+
+  // 筛选在该时间范围内创建的文件版本
+  const changes: Array<{
+    filePath: string;
+    versions: Array<{ backupFileName: string; version: number; size: number; backupTime: string }>;
+  }> = [];
+
+  for (const file of props.fileHistory.files) {
+    const matchingVersions = file.versions.filter(v => {
+      const backupTime = new Date(v.backupTime);
+      return backupTime >= searchStart && backupTime <= endTime;
+    });
+
+    if (matchingVersions.length > 0) {
+      changes.push({
+        filePath: file.filePath,
+        versions: matchingVersions,
+      });
+    }
+  }
+
+  return changes;
 });
 
 function formatTime(timestamp?: string) {
@@ -183,7 +223,7 @@ const stepTotalTokens = computed(() => {
           <pre class="whitespace-pre-wrap font-sans break-words">{{ message.content }}</pre>
         </div>
         <div v-else class="text-xs text-muted-foreground/60 line-clamp-1">
-          {{ previewContent }}
+          {{ noisePreview }}
         </div>
       </div>
     </div>
@@ -240,6 +280,31 @@ const stepTotalTokens = computed(() => {
 
         <!-- Markdown 渲染内容 -->
         <MessageContent v-if="message.content" :content="message.content" />
+
+        <!-- 文件变更（用户消息后发生的变更） -->
+        <div
+          v-if="isUser && userFileChanges.length > 0"
+          class="mt-3 pt-2 border-t border-border/30"
+        >
+          <div class="flex items-center gap-1.5 mb-1.5">
+            <FileCode class="w-3 h-3 text-orange-400" />
+            <span class="text-[10px] text-muted-foreground">本轮变更文件</span>
+          </div>
+          <div class="space-y-1">
+            <div
+              v-for="file in userFileChanges"
+              :key="file.filePath"
+              class="flex items-center gap-1.5 flex-wrap"
+            >
+              <FileVersionBadges
+                :file-path="file.filePath"
+                :versions="file.versions"
+                :session-id="sessionId!"
+                show-file-name
+              />
+            </div>
+          </div>
+        </div>
 
         <!-- Token 使用信息 -->
         <div

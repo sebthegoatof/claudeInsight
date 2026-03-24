@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { historyApi } from '../api/history';
+import { useLinkageStore } from './linkageStore';
 import type { SessionInfo, SessionDetail, PaginatedResponse } from '../types/conversation';
 
 export const useConversationStore = defineStore('conversation', () => {
@@ -90,6 +91,11 @@ export const useConversationStore = defineStore('conversation', () => {
       }
       currentSession.value = response;
       selectedSessionId.value = sessionId;
+
+      // 同时获取联动信息和文件历史
+      const linkageStore = useLinkageStore();
+      linkageStore.fetchSessionLinks(sessionId, projectPath);
+      linkageStore.fetchSessionFileHistory(sessionId, projectPath);
     } catch (e) {
       // 忽略过期响应的错误
       if (requestId !== detailRequestId) return;
@@ -114,6 +120,9 @@ export const useConversationStore = defineStore('conversation', () => {
   function clearCurrentSession() {
     currentSession.value = null;
     selectedSessionId.value = null;
+    // 清除联动信息
+    const linkageStore = useLinkageStore();
+    linkageStore.clearLinks();
   }
 
   async function loadMore() {
