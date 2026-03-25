@@ -1297,7 +1297,7 @@ export class FileScanner {
     // 例如: projectPath="/Users/mac/Desktop/项目/704yunzhi_xinch_10.0-master/seeyon/m3/apps/v5/collaboration/html"
     // 编码后可能变成: -Users-mac-Desktop----704yunzhi-xinch-10-0-master-seeyon-m3-apps-v5-collaboration-html
     // 我们尝试将路径中的关键部分与目录名进行匹配
-    const pathParts = projectPath.split('/').filter(p => p.length > 0);
+    const pathParts = projectPath.split(/[/\\]/).filter(p => p.length > 0);
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
 
@@ -1569,7 +1569,7 @@ export class FileScanner {
       let rank = 0;
       let snippet = '';
       const titleLower = (session.title || '').toLowerCase();
-      const projectNameLower = session.projectPath.split('/').pop()?.toLowerCase() || '';
+      const projectNameLower = session.projectPath.split(/[/\\]/).pop()?.toLowerCase() || '';
 
       // 检查标题匹配
       for (const keyword of keywords) {
