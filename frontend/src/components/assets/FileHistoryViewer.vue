@@ -120,12 +120,12 @@ function formatSize(bytes: number) {
 
 function getProjectName(path?: string): string {
   if (!path) return '未知项目';
-  const parts = path.split('/');
+  const parts = path.split(/[/\\]/).filter(Boolean);
   return parts[parts.length - 1] || path;
 }
 
 function getFileName(filePath: string): string {
-  return filePath.split('/').pop() || filePath;
+  return filePath.split(/[/\\]/).pop() || filePath;
 }
 
 function getExtColor(name: string): string {

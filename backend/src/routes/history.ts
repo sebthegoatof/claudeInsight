@@ -6,7 +6,7 @@ import { skillScanner } from '../services/skillScanner.js';
 import { linkageService } from '../services/linkageService.js';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
-import { existsSync, statSync, readdirSync, mkdirSync } from 'fs';
+import { existsSync, statSync, readdirSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 
 const historyRoutes: FastifyPluginAsync = async (fastify) => {
@@ -56,7 +56,7 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
     return projects.map((p) => ({
       path: p.path,
       encodedPath: p.encodedPath,
-      name: p.path.split('/').pop() || p.path,
+      name: p.path.split(/[/\\]/).filter(Boolean).pop() || p.path,
       sessionCount: p.sessionCount,
       lastActivityAt: p.lastActivityAt?.toISOString() || null,
     }));
@@ -85,7 +85,7 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         path: project.path,
         encodedPath: project.encodedPath,
-        name: project.path.split('/').pop() || project.path,
+        name: project.path.split(/[/\\]/).filter(Boolean).pop() || project.path,
         sessionCount: project.sessionCount,
         lastActivityAt: project.lastActivityAt?.toISOString() || null,
         metrics,
@@ -362,7 +362,7 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
       recentProjects: projects.slice(0, 5).map((p) => ({
         path: p.path,
         encodedPath: p.encodedPath,
-        name: p.path.split('/').pop() || p.path,
+        name: p.path.split(/[/\\]/).filter(Boolean).pop() || p.path,
         sessionCount: p.sessionCount,
         lastActivityAt: p.lastActivityAt?.toISOString() || null,
       })),
@@ -752,10 +752,23 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
       const zipEntries = zip.getEntries();
 
       // 解压所有文件，覆盖同名文件
+      // 导出时会话文件被放在 sessions/ 前缀下，导入时需要去掉该前缀
+      // 资产文件放在 assets/ 前缀下，跳过不处理（manifest.json 和 CLAUDE.md 也跳过）
       for (const entry of zipEntries) {
+        let entryPath = entry.entryName;
+
+        // 去掉 sessions/ 前缀，将会话文件直接放到项目目录下
+        if (entryPath.startsWith('sessions/')) {
+          entryPath = entryPath.slice('sessions/'.length);
+        } else {
+          // 跳过非会话文件（manifest.json, CLAUDE.md, assets/ 等）
+          continue;
+        }
+
+        // 跳过空路径（sessions/ 目录本身）
+        if (!entryPath) continue;
+
         if (!entry.isDirectory) {
-          // 直接解压到目标目录，保持扁平结构
-          const entryPath = entry.entryName;
           const targetPath = join(targetProjectDir, entryPath);
 
           // 确保父目录存在
@@ -764,11 +777,11 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
             mkdirSync(parentDir, { recursive: true });
           }
 
-          // 写入文件
-          zip.extractEntryTo(entry, dirname(targetPath), false, true);
+          // 直接写入文件内容
+          writeFileSync(targetPath, entry.getData());
         } else {
           // 创建目录
-          const dirPath = join(targetProjectDir, entry.entryName);
+          const dirPath = join(targetProjectDir, entryPath);
           if (!existsSync(dirPath)) {
             mkdirSync(dirPath, { recursive: true });
           }
@@ -777,7 +790,7 @@ const historyRoutes: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
-        message: `Successfully imported ${zipEntries.filter(e => !e.isDirectory).length} files`,
+        message: `Successfully imported ${zipEntries.filter(e => !e.isDirectory && e.entryName.startsWith('sessions/')).length} files`,
         targetProjectId,
       };
     } catch (error) {

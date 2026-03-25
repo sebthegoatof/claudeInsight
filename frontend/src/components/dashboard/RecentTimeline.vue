@@ -46,8 +46,8 @@ function formatTime(timestamp: string): string {
 
 function getProjectName(project: string): string {
   if (!project) return '未知项目';
-  // project 是完整路径如 /Users/mac/Desktop/项目/xxx
-  const parts = project.split('/').filter(Boolean);
+  // 支持 Unix(/) 和 Windows(\) 路径分隔符
+  const parts = project.split(/[/\\]/).filter(Boolean);
   return parts[parts.length - 1] || project;
 }
 </script>
